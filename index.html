@@ -17,7 +17,7 @@ h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.3px}
 button{padding:12px 14px;border-radius:12px;border:1px solid var(--accent);background:var(--accent);color:#111;font-weight:700}
 button.ghost{background:transparent;color:var(--text)}
 button.warn{background:transparent;border-color:var(--accent);color:var(--text)}
-input,select{border:1px solid #2a2a2a;border-radius:12px;background:#0e0e0e;color:var(--text)}
+input{border:1px solid #2a2a2a;border-radius:12px;background:#0e0e0e;color:var(--text)}
 input::placeholder{color:#777}
 input.big{font-size:20px;padding:14px}
 input.med{font-size:16px;padding:12px}
@@ -33,7 +33,6 @@ th{text-align:left;padding:8px;background:var(--accent);color:#111}
 td{padding:8px;border-top:1px solid #222}
 input.note{width:100%;background:transparent;color:var(--text);border:1px solid #2a2a2a;border-radius:8px;padding:6px}
 footer{border-top:1px solid var(--accent);background:var(--panel)}
-.badge{font-size:12px;padding:2px 8px;border-radius:999px;background:#222;border:1px solid #333}
 </style>
 </head>
 <body>
@@ -41,21 +40,30 @@ footer{border-top:1px solid var(--accent);background:var(--panel)}
   <div class="wrap row">
     <div class="tag"></div>
     <h1>Man Pavilion Tool Logger (DPW)</h1>
-    <div style="margin-left:auto" class="small">number → spreadsheet • mobile first</div>
+    <div style="margin-left:auto" class="small">barcode → spreadsheet • mobile only</div>
   </div>
 </header>
 
 <main class="wrap" style="padding-bottom:96px">
-  <!-- FAST ENTRY -->
   <div class="panel">
-    <div class="small" style="margin-bottom:6px">Step 1: **Scan or type the code** • Step 2: name the item • Step 3: pick a status • Step 4: Add Row</div>
     <div class="row">
-      <input id="code" class="big mono" inputmode="numeric" pattern="[0-9\-]*" placeholder="Code (e.g., 554-10098)" style="flex:1" autofocus />
-      <button id="scanBtn" class="ghost" style="border-color:var(--accent2)">Scan Barcode</button>
+      <span id="camStatus" class="small">Starting camera…</span>
+      <div class="small" style="margin-left:auto" id="hint">Aim the sticker so the whole barcode is visible.</div>
+    </div>
+    <div class="camwrap"><video id="video" playsinline muted></video></div>
+    <div class="row" style="margin-top:8px">
+      <button id="flipBtn" class="ghost">Flip</button>
+      <button id="torchBtn" class="ghost">Flash</button>
+      <button id="stopBtn" class="warn" style="margin-left:auto">Stop</button>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <input id="code" class="big mono" inputmode="numeric" pattern="[0-9\-]*" placeholder="Code (e.g., 554-10098)" style="flex:1"/>
     </div>
     <div class="row" style="margin-top:8px">
       <input id="item" class="med" placeholder="What is it? (e.g., M18 5.0Ah battery)" style="flex:1"/>
     </div>
+
     <div class="row" style="margin-top:8px">
       <div class="seg" id="statusSeg" style="flex:1">
         <button data-v="ADD" class="active">Add</button>
@@ -65,198 +73,149 @@ footer{border-top:1px solid var(--accent);background:var(--panel)}
         <button data-v="LOST">Lost</button>
       </div>
     </div>
+
     <div class="row" style="margin-top:8px">
-      <label><input id="autoAdd" type="checkbox" /> Auto‑add on scan</label>
-      <div class="small" id="status" style="margin-left:auto">Ready</div>
+      <label><input id="autoAdd" type="checkbox" checked/> Auto‑add on scan</label>
+      <div class="small" id="status" style="margin-left:auto">Scanning…</div>
     </div>
+
     <div class="row" style="margin-top:8px">
       <button id="addBtn">Add Row</button>
       <button id="clearInputs" class="ghost">Clear fields</button>
+      <label class="small" style="margin-left:auto"><input id="dedupe" type="checkbox" checked/> De‑dupe codes</label>
     </div>
 
-    <!-- CAMERA (only when scanning) -->
-    <div id="camBlock" style="display:none; margin-top:10px">
-      <div class="camwrap"><video id="video" playsinline muted></video></div>
-      <div class="row" style="margin-top:8px">
-        <button id="flipBtn" class="ghost">Flip</button>
-        <button id="torchBtn" class="ghost">Flash</button>
-        <span class="badge" id="modeBadge">Barcode mode</span>
-        <button id="stopBtn" class="warn" style="margin-left:auto">Stop Camera</button>
-      </div>
-      <div id="error" class="small" style="margin-top:6px;color:var(--accent2)"></div>
-    </div>
+    <div id="error" class="small" style="margin-top:6px;color:var(--accent2)"></div>
   </div>
 
-  <!-- ACTIONS -->
-  <div class="row" style="margin-top:12px">
-    <button id="exportBtn" style="background:var(--accent2);border-color:var(--accent2)">Export CSV</button>
-    <button id="copyBtn" class="ghost" style="border-color:var(--accent2)">Copy CSV</button>
-    <label class="small"><input id="dedupe" type="checkbox" checked/> De‑dupe codes</label>
-  </div>
-
-  <!-- TABLE -->
-  <div class="panel">
+  <div class="panel" style="margin-top:12px">
     <table>
       <thead><tr><th>Time</th><th>Code</th><th>Item</th><th>Status</th><th>Note</th></tr></thead>
       <tbody id="tbody"><tr id="emptyRow"><td colspan="5" class="small" style="text-align:center">No rows yet.</td></tr></tbody>
     </table>
   </div>
+
+  <div class="row" style="margin-top:12px">
+    <button id="exportBtn" style="background:var(--accent2);border-color:var(--accent2)">Export CSV</button>
+    <button id="copyBtn" class="ghost" style="border-color:var(--accent2)">Copy CSV</button>
+  </div>
 </main>
 
 <footer><div class="wrap small">Man Pavilion • subset of DPW</div></footer>
 
-<!-- ZXing for barcode (no OCR) -->
+<!-- ZXing for barcode -->
 <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
 <script>
-const codeEl = document.getElementById('code');
-const itemEl = document.getElementById('item');
-const addBtn = document.getElementById('addBtn');
-const clearInputsBtn = document.getElementById('clearInputs');
-const tbody = document.getElementById('tbody');
-const emptyRow = document.getElementById('emptyRow');
-const statusEl = document.getElementById('status');
-const dedupeEl = document.getElementById('dedupe');
-const autoAddEl = document.getElementById('autoAdd');
-const seg = document.getElementById('statusSeg');
-let currentStatus = 'ADD';
+const codeEl=document.getElementById('code'), itemEl=document.getElementById('item');
+const addBtn=document.getElementById('addBtn'), clearBtn=document.getElementById('clearInputs');
+const tbody=document.getElementById('tbody'), emptyRow=document.getElementById('emptyRow');
+const statusEl=document.getElementById('status'), errEl=document.getElementById('error'), camStatus=document.getElementById('camStatus');
+const dedupeEl=document.getElementById('dedupe'), autoAddEl=document.getElementById('autoAdd');
+const video=document.getElementById('video'), flipBtn=document.getElementById('flipBtn'), torchBtn=document.getElementById('torchBtn'), stopBtn=document.getElementById('stopBtn');
+const seg=document.getElementById('statusSeg');
+let currentStatus='ADD'; [...seg.querySelectorAll('button')].forEach(b=>b.onclick=()=>{[...seg.querySelectorAll('button')].forEach(x=>x.classList.remove('active')); b.classList.add('active'); currentStatus=b.dataset.v;});
 
-// status buttons
-[...seg.querySelectorAll('button')].forEach(btn=>{
-  btn.onclick=()=>{
-    [...seg.querySelectorAll('button')].forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active'); currentStatus = btn.dataset.v;
-  };
-});
+function beep(){try{const c=new (window.AudioContext||window.webkitAudioContext)();const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.type='square';o.frequency.value=880;g.gain.value=0.06;o.start();o.stop(c.currentTime+0.1);}catch{}}
+function flash(el){const x=el.style.borderColor; el.style.borderColor='#ff6'; setTimeout(()=>el.style.borderColor=x,600);}
+function escCSV(s){if(s==null)s=''; s=String(s); return /[\",\\n]/.test(s)? '\"'+s.replaceAll('\"','\"\"')+'\"' : s;}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 
-function beep(){ try{const c=new (window.AudioContext||window.webkitAudioContext)();const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.type='square';o.frequency.value=880;g.gain.value=0.06;o.start();o.stop(c.currentTime+0.1);}catch{} }
+// keep only digits and dashes; prefer ####-##### pattern if present
+function sanitizeCode(txt){
+  const only=String(txt||'').replace(/[^0-9-]/g,'');
+  const match=only.match(/\b\d{2,4}-\d{3,6}\b/);
+  return match?match[0]:only.replace(/--+/g,'-').replace(/^-+|-+$/g,'');
+}
 
 let items=[], seen=new Set();
-
-// ADD ROW
 function addRow(fromScan=false){
-  const code = (codeEl.value||'').trim();
-  if(!code){ flashField(codeEl); return; }
-  if(dedupeEl.checked && seen.has(code) && fromScan){ // prevent rapid repeats from camera
-    return;
-  }
-  const item = (itemEl.value||'').trim();
-  const ts = new Date().toISOString();
-  items.unshift({ts, code, item, status: currentStatus, note:''});
+  const code=(codeEl.value||'').trim();
+  if(!code){ flash(codeEl); return; }
+  if(dedupeEl.checked && fromScan && seen.has(code)) return;
+  const item=(itemEl.value||'').trim();
+  const ts=new Date().toISOString();
+  items.unshift({ts,code,item,status:currentStatus,note:''});
   seen.add(code);
   if(emptyRow) emptyRow.remove();
   const tr=document.createElement('tr');
-  tr.innerHTML = `
-    <td class="mono" style="opacity:.8;white-space:nowrap">${new Date(ts).toLocaleString()}</td>
-    <td class="mono">${code}</td>
-    <td>${escapeHtml(item)}</td>
-    <td class="mono">${currentStatus}</td>
-    <td><input class="note" placeholder="optional note"></td>`;
-  tr.querySelector('input').addEventListener('input', e => {
-    const r = items.find(x=>x.ts===ts); if(r) r.note = e.target.value;
-  });
-  tbody.prepend(tr);
-  beep();
-  // reset for next
+  tr.innerHTML=`<td class="mono" style="opacity:.8;white-space:nowrap">${new Date(ts).toLocaleString()}</td>
+                <td class="mono">${code}</td>
+                <td>${escapeHtml(item)}</td>
+                <td class="mono">${currentStatus}</td>
+                <td><input class="note" placeholder="optional note"></td>`;
+  tr.querySelector('input').addEventListener('input',e=>{const r=items.find(x=>x.ts===ts); if(r) r.note=e.target.value;});
+  tbody.prepend(tr); beep();
   if(!fromScan){ codeEl.value=''; }
-  itemEl.value='';
-  codeEl.focus();
+  itemEl.value=''; codeEl.focus();
 }
-addBtn.onclick = ()=>addRow(false);
-clearInputsBtn.onclick = ()=>{ codeEl.value=''; itemEl.value=''; codeEl.focus(); };
+addBtn.onclick=()=>addRow(false);
+clearBtn.onclick=()=>{ codeEl.value=''; itemEl.value=''; codeEl.focus(); };
 
 // EXPORT/COPY
 document.getElementById('exportBtn').onclick=()=>{
-  const csv = toCSV(items.slice().reverse());
-  const b = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-  const u = URL.createObjectURL(b);
-  const a = document.createElement('a');
-  a.href = u; a.download = 'man-pavilion-log-'+new Date().toISOString().slice(0,19)+'.csv';
+  const header='Timestamp,Code,Item,Status,Note\n';
+  const body=items.slice().reverse().map(r=>[r.ts,escCSV(r.code),escCSV(r.item),escCSV(r.status),escCSV(r.note)].join(',')).join('\n');
+  const csv=header+body+'\n';
+  const b=new Blob([csv],{type:'text/csv;charset=utf-8;'}), u=URL.createObjectURL(b);
+  const a=document.createElement('a'); a.href=u; a.download='man-pavilion-log-'+new Date().toISOString().slice(0,19)+'.csv';
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u);
 };
 document.getElementById('copyBtn').onclick=async()=>{
-  try{ await navigator.clipboard.writeText(toCSV(items.slice().reverse())); alert('CSV copied'); }
-  catch(e){ alert('Copy failed: '+(e?.message||e)); }
+  const header='Timestamp,Code,Item,Status,Note\n';
+  const body=items.slice().reverse().map(r=>[r.ts,escCSV(r.code),escCSV(r.item),escCSV(r.status),escCSV(r.note)].join(',')).join('\n');
+  try{ await navigator.clipboard.writeText(header+body+'\n'); alert('CSV copied'); } catch(e){ alert('Copy failed: '+(e?.message||e)); }
 };
-function toCSV(rows){
-  const header = 'Timestamp,Code,Item,Status,Note\n';
-  const body = rows.map(r=>[r.ts, esc(r.code), esc(r.item), esc(r.status), esc(r.note)].join(',')).join('\n');
-  return header + body + '\n';
-}
-function esc(s){ if(s==null)s=''; s=String(s); return /[",\n]/.test(s)? '"'+s.replaceAll('"','""')+'"' : s; }
-function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
-function flashField(el){ const old=el.style.borderColor; el.style.borderColor='#ff6'; setTimeout(()=>el.style.borderColor=old,600); }
 
-// ================= BARCODE SCAN =================
-const scanBtn = document.getElementById('scanBtn');
-const camBlock = document.getElementById('camBlock');
-const video = document.getElementById('video');
-const flipBtn = document.getElementById('flipBtn');
-const torchBtn = document.getElementById('torchBtn');
-const stopBtn = document.getElementById('stopBtn');
-const errEl = document.getElementById('error');
-const modeBadge = document.getElementById('modeBadge');
-
+// ==== BARCODE (auto‑start) ====
 let reader=null, controls=null, stream=null, facing='environment';
-
-scanBtn.onclick = async ()=>{ await startCamera(); };
-flipBtn.onclick = async ()=>{ facing = (facing==='environment'?'user':'environment'); await startCamera(); };
-stopBtn.onclick = ()=> stopCamera();
-
 async function startCamera(){
-  errEl.textContent=''; modeBadge.textContent='Barcode mode';
-  camBlock.style.display='block';
-  statusEl.textContent='Starting camera…';
+  errEl.textContent=''; camStatus.textContent='Starting camera…';
   try{
-    if(controls){controls.stop();controls=null}
-    if(reader){reader.reset();reader=null}
+    if(controls){controls.stop();controls=null} if(reader){reader.reset();reader=null}
     if(stream){stream.getTracks().forEach(t=>t.stop()); stream=null}
-
-    stream = await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode:{ideal:facing}, width:{ideal:1920}, height:{ideal:1080} }, audio:false
-    });
-    video.srcObject = stream; await video.play();
-
-    // Torch toggle support
-    torchBtn.onclick = async ()=>{
-      try{
-        const track = stream.getVideoTracks()[0];
-        const caps = track.getCapabilities?.();
-        if(caps && caps.torch){
-          await track.applyConstraints({ advanced:[{ torch: !track.getConstraints().advanced?.[0]?.torch }] });
-        }else{ alert('Flash not supported on this device'); }
-      }catch(e){ alert('Flash error: '+(e?.message||e)); }
-    };
-
-    const hints = new Map();
-    const fmts = [ ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39, ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8 ];
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, fmts);
-    reader = new ZXing.BrowserMultiFormatReader(hints);
-
-    controls = await reader.decodeFromVideoElement(video, (res, err) => {
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facing},width:{ideal:1920},height:{ideal:1080}},audio:false});
+    video.srcObject=stream; await video.play();
+    camStatus.textContent='Camera ready';
+    const hints=new Map();
+    const fmts=[ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39, ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8];
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,fmts);
+    reader=new ZXing.BrowserMultiFormatReader(hints);
+    controls=await reader.decodeFromVideoElement(video,(res,err)=>{
       if(res){
-        const text = String(res.getText()).trim();
-        codeEl.value = text;
-        statusEl.textContent = 'Scanned: '+text;
-        if(autoAddEl.checked){ addRow(true); }
+        const raw=String(res.getText()).trim();
+        const text=sanitizeCode(raw);
+        codeEl.value=text;
+        statusEl.textContent='Scanned: '+text;
+        if(autoAddEl.checked && text){ addRow(true); }
         beep();
       }
     });
-    statusEl.textContent='Scanning… aim the sticker so the whole barcode is visible.';
+    // Torch
+    torchBtn.onclick=async()=>{
+      try{
+        const track=stream.getVideoTracks()[0];
+        const caps=track.getCapabilities?.();
+        if(caps && caps.torch){
+          const cur=track.getConstraints().advanced?.[0]?.torch || false;
+          await track.applyConstraints({ advanced:[{ torch: !cur }] });
+        }else{ alert('Flash not supported on this device'); }
+      }catch(e){ alert('Flash error: '+(e?.message||e)); }
+    };
   }catch(e){
-    errEl.textContent = '⚠ ' + (e?.message || e);
-    statusEl.textContent='Camera error';
+    errEl.textContent='⚠ '+(e?.message||e);
+    camStatus.textContent='Camera error';
   }
 }
-function stopCamera(){
-  try{ if(controls) controls.stop(); }catch{}
-  try{ if(reader) reader.reset(); }catch{}
-  try{ if(stream) stream.getTracks().forEach(t=>t.stop()); }catch{}
-  controls=null; reader=null; stream=null; statusEl.textContent='Camera stopped';
-  camBlock.style.display='none';
-}
-// Enter key = Add Row
-codeEl.addEventListener('keydown', e=>{ if(e.key==='Enter'){ addRow(false); }});
-itemEl.addEventListener('keydown', e=>{ if(e.key==='Enter'){ addRow(false); }});
+function stopCamera(){ try{if(controls)controls.stop()}catch{} try{if(reader)reader.reset()}catch{} try{if(stream)stream.getTracks().forEach(t=>t.stop())}catch{} controls=null; reader=null; stream=null; camStatus.textContent='Camera stopped'; }
+flipBtn.onclick=async()=>{ facing=(facing==='environment'?'user':'environment'); await startCamera(); };
+stopBtn.onclick=stopCamera;
+
+// Enter = Add Row
+codeEl.addEventListener('keydown',e=>{ if(e.key==='Enter'){ addRow(false); }});
+itemEl.addEventListener('keydown',e=>{ if(e.key==='Enter'){ addRow(false); }});
+
+// Auto‑start camera
+document.addEventListener('DOMContentLoaded', startCamera);
 </script>
 </body>
 </html>
