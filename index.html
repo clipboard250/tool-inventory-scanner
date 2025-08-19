@@ -19,8 +19,8 @@ button.out{background:transparent;color:var(--text)}
 .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
 /* Camera fills box (no vertical bars) */
 .camwrap{position:relative;width:100%;height:54vh;max-height:440px;border:2px solid var(--accent);border-radius:12px;overflow:hidden;background:#000}
-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:rotate(0deg)}
-/* Manual entry (collapsed by default) */
+video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+/* Manual (collapsed) */
 details.manual-wrap{margin-top:8px}
 details.manual-wrap[open]{margin-top:4px}
 .manual{display:flex;gap:8px;margin-top:8px}
@@ -31,6 +31,7 @@ table{width:100%;border-collapse:collapse;font-size:14px;margin-top:12px}
 th{text-align:left;padding:8px;background:var(--accent);color:#111}
 td{padding:8px;border-top:1px solid #222}
 input.note{width:100%;background:transparent;color:var(--text);border:1px solid #2a2a2a;border-radius:8px;padding:6px}
+.badge{font-size:12px;padding:2px 8px;border-radius:999px;background:#222;border:1px solid #333}
 </style>
 </head>
 <body>
@@ -38,7 +39,7 @@ input.note{width:100%;background:transparent;color:var(--text);border:1px solid 
   <div class="wrap row">
     <div class="tag"></div>
     <h1>Man Pavilion Tool Scanner (DPW)</h1>
-    <div style="margin-left:auto" class="small">barcode → spreadsheet</div>
+    <div style="margin-left:auto" class="small">photo/OCR → spreadsheet</div>
   </div>
 </header>
 
@@ -47,17 +48,23 @@ input.note{width:100%;background:transparent;color:var(--text);border:1px solid 
     <div class="row">
       <button id="startBtn">Start Camera</button>
       <button id="flipBtn" class="out">Flip Camera</button>
-      <label class="small"><input type="checkbox" id="dedupe" checked> De‑dupe</label>
-      <label class="small"><input type="checkbox" id="beep" checked> Beep</label>
+      <span id="modeBadge" class="badge">OCR mode</span>
       <div style="margin-left:auto" class="small" id="status">Camera idle</div>
     </div>
 
     <div class="camwrap"><video id="video" playsinline muted></video></div>
 
+    <div class="row" style="margin-top:8px">
+      <button id="snapBtn" style="background:var(--accent2);border-color:var(--accent2)">Snap + Read</button>
+      <button id="burstBtn" class="out" style="border-color:var(--accent2)">Burst x5</button>
+      <button id="barcodeBtn" class="out">Barcode Mode</button>
+      <div class="small" id="progress" style="margin-left:auto"></div>
+    </div>
+
     <div class="small" style="margin-top:6px">Last: <span class="mono" id="last"></span></div>
     <div id="error" class="small" style="margin-top:6px;color:var(--accent2)"></div>
 
-    <!-- Manual entry (use ONLY if sticker is gone) -->
+    <!-- Manual entry (only if sticker is gone) -->
     <details class="manual-wrap">
       <summary class="small" style="cursor:pointer;padding:6px 0">Manual entry (only if sticker is gone)</summary>
       <div class="manual">
@@ -82,63 +89,120 @@ input.note{width:100%;background:transparent;color:var(--text);border:1px solid 
   </div>
 </main>
 
-<footer><div class="wrap small">Man Pavilion • subset of DPW</div></footer>
+<footer><div class="wrap small">Built by Clipboard of Man Pavilion • DPW</div></footer>
 
-<!-- ZXing UMD build (best for iOS Safari) -->
+<!-- OCR (Tesseract) and ZXing (barcode) -->
+<script src="https://unpkg.com/tesseract.js@v4.0.2/dist/tesseract.min.js"></script>
 <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
 <script>
 const video=document.getElementById('video'), statusEl=document.getElementById('status'),
       lastEl=document.getElementById('last'), errEl=document.getElementById('error'),
-      tbody=document.getElementById('tbody'), emptyRow=document.getElementById('emptyRow'),
-      dedupeEl=document.getElementById('dedupe'), beepEl=document.getElementById('beep'),
-      manualInput=document.getElementById('manualCode'), manualBtn=document.getElementById('addManual');
+      progressEl=document.getElementById('progress'), modeBadge=document.getElementById('modeBadge'),
+      tbody=document.getElementById('tbody'), emptyRow=document.getElementById('emptyRow');
 
-let reader=null, controls=null, stream=null, facing='environment', seen=new Set(), items=[];
+let items=[], seen=new Set(), stream=null, facing='environment';
+let reader=null, controls=null, mode='ocr'; // 'ocr' or 'barcode'
 
 function uiError(m){ errEl.textContent=m?('⚠ '+m):'' }
-function beep(){ if(!beepEl.checked) return; try{const c=new (window.AudioContext||window.webkitAudioContext)();const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.type='square';o.frequency.value=880;g.gain.value=0.05;o.start();o.stop(c.currentTime+0.12);}catch{} }
-function addRow(code){ code=(code||'').trim(); if(!code) return;
-  if(dedupeEl.checked && seen.has(code)) return; seen.add(code);
+function beep(){ try{const c=new (window.AudioContext||window.webkitAudioContext)();const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.type='square';o.frequency.value=880;g.gain.value=0.05;o.start();o.stop(c.currentTime+0.12);}catch{} }
+function addRow(code){
+  code=(code||'').trim(); if(!code) return;
+  if(seen.has(code)) return; seen.add(code);
   const ts=new Date().toISOString(); items.unshift({ts,code,note:''});
   if(emptyRow) emptyRow.remove();
   const tr=document.createElement('tr'); tr.innerHTML=
-   `<td class="mono" style="opacity:.8;white-space:nowrap">${new Date(ts).toLocaleString()}</td>
-    <td class="mono">${code}</td>
-    <td><input class="note" placeholder="optional note (tool/location)"></td>`;
+    `<td class="mono" style="opacity:.8;white-space:nowrap">${new Date(ts).toLocaleString()}</td>
+     <td class="mono">${code}</td>
+     <td><input class="note" placeholder="optional note (tool/location)"></td>`;
   tr.querySelector('input').addEventListener('input',e=>{ items.find(i=>i.ts===ts).note=e.target.value });
   tbody.prepend(tr); lastEl.textContent=code; beep();
 }
 
-async function start(){
+async function startCamera(){
   uiError(''); statusEl.textContent='Starting…';
   try{
     if(controls){controls.stop();controls=null} if(reader){reader.reset();reader=null}
+    if(stream){stream.getTracks().forEach(t=>t.stop()); stream=null}
     stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facing},width:{ideal:1920},height:{ideal:1080}},audio:false});
     video.srcObject=stream; await video.play();
-
-    // Limit formats to improve reliability on your stickers
-    const hints=new Map();
-    const formats=[ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39];
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
-    reader=new ZXing.BrowserMultiFormatReader(hints);
-
-    controls=await reader.decodeFromVideoElement(video,(res,err)=>{ if(res){ addRow(String(res.getText())) }});
-    statusEl.textContent='Scanning…';
+    statusEl.textContent=(mode==='ocr'?'OCR ready':'Scanning (barcode)…');
+    modeBadge.textContent=(mode==='ocr'?'OCR mode':'Barcode mode');
+    // If barcode mode, start ZXing
+    if(mode==='barcode'){
+      const hints=new Map();
+      const fmts=[ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39];
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, fmts);
+      reader=new ZXing.BrowserMultiFormatReader(hints);
+      controls=await reader.decodeFromVideoElement(video,(res,err)=>{ if(res){ addRow(String(res.getText())) }});
+    }
   }catch(e){ uiError(e?.message||String(e)); statusEl.textContent='Error' }
 }
-function stop(){ try{if(controls)controls.stop()}catch{} try{if(reader)reader.reset()}catch{} try{if(stream)stream.getTracks().forEach(t=>t.stop())}catch{} controls=null;reader=null;stream=null;statusEl.textContent='Stopped' }
 
-document.getElementById('startBtn').onclick=start;
-document.getElementById('stopBtn').onclick=stop;
-document.getElementById('flipBtn').onclick=()=>{ facing=(facing==='environment'?'user':'environment'); stop(); start() };
-document.getElementById('clearBtn').onclick=()=>{ if(!confirm('Clear all scans?'))return; items=[]; seen=new Set(); lastEl.textContent=''; tbody.innerHTML=''; tbody.appendChild(emptyRow) };
-document.getElementById('copyBtn').onclick=async()=>{ const csv=toCSV(items.slice().reverse()); try{await navigator.clipboard.writeText(csv); alert('CSV copied')}catch(e){alert('Copy failed: '+(e?.message||e))} };
-document.getElementById('exportBtn').onclick=()=>{ const csv=toCSV(items.slice().reverse()); const b=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download='man-pavilion-scans-'+new Date().toISOString().slice(0,19)+'.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u) };
-manualBtn.onclick=()=>{ addRow(manualInput.value); manualInput.value=''; manualInput.focus() };
-manualInput?.addEventListener('keyup',e=>{ if(e.key==='Enter') manualBtn.click() });
+function stopAll(){
+  try{if(controls)controls.stop()}catch{} try{if(reader)reader.reset()}catch{}
+  try{if(stream)stream.getTracks().forEach(t=>t.stop())}catch{}
+  controls=null; reader=null; stream=null; statusEl.textContent='Stopped';
+}
 
-function toCSV(rows){ const header='Timestamp,Code,Note\n'; const body=rows.map(r=>[r.ts, esc(r.code), esc(r.note)].join(',')).join('\n'); return header+body+'\n' }
+function toCSV(rows){ const h='Timestamp,Code,Note\n'; const b=rows.map(r=>[r.ts, esc(r.code), esc(r.note)].join(',')).join('\n'); return h+b+'\n' }
 function esc(s){ if(s==null)s=''; s=String(s); return /[\",\\n]/.test(s)? '"'+s.replaceAll('"','""')+'"' : s }
+
+// ---------- OCR helpers ----------
+const canvas=document.createElement('canvas'), ctx=canvas.getContext('2d');
+
+function grabFrame(){
+  // Grab a centered crop (middle 60% width, 40% height) to focus on the sticker area
+  const vw=video.videoWidth||1280, vh=video.videoHeight||720;
+  const cw=Math.floor(vw*0.8), ch=Math.floor(vh*0.45);
+  const sx=Math.floor((vw-cw)/2), sy=Math.floor((vh-ch)/2);
+  const targetW=640, targetH=Math.floor(ch*(640/cw));
+  canvas.width=targetW; canvas.height=targetH;
+  ctx.drawImage(video, sx, sy, cw, ch, 0, 0, targetW, targetH);
+  // simple contrast boost
+  const img=ctx.getImageData(0,0,targetW,targetH), d=img.data;
+  for(let i=0;i<d.length;i+=4){ const g=(d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11); const v=g>128?255:0; d[i]=d[i+1]=d[i+2]=v; }
+  ctx.putImageData(img,0,0);
+  return canvas.toDataURL('image/png');
+}
+
+async function ocrOnce(){
+  try{
+    statusEl.textContent='Reading…';
+    progressEl.textContent='⏳';
+    const dataURL=grabFrame();
+    const { data } = await Tesseract.recognize(dataURL, 'eng', {
+      tessedit_char_whitelist: '0123456789-',
+      logger: m => { if(m.status==='recognizing text') progressEl.textContent = Math.round(m.progress*100)+'%'; }
+    });
+    progressEl.textContent='';
+    const raw=(data.text||'').replace(/\s+/g,'').trim();
+    // pick the first pattern like 123-12345 or long digits
+    const match = raw.match(/\d{2,4}-\d{3,6}|\d{5,}/);
+    const code = match ? match[0] : raw;
+    if(code){ addRow(code) } else { uiError('Could not read number. Try again closer/steadier.'); }
+    statusEl.textContent='OCR ready';
+  }catch(e){ uiError(e?.message||String(e)); statusEl.textContent='OCR error' }
+}
+
+async function ocrBurst(n=5){
+  for(let i=0;i<n;i++){ await ocrOnce(); }
+}
+
+// ---------- wire up ----------
+document.getElementById('startBtn').onclick = startCamera;
+document.getElementById('stopBtn').onclick  = stopAll;
+document.getElementById('flipBtn').onclick  = ()=>{ facing=(facing==='environment'?'user':'environment'); startCamera(); };
+document.getElementById('snapBtn').onclick  = ()=>{ if(mode==='barcode'){mode='ocr'; startCamera();} ocrOnce(); };
+document.getElementById('burstBtn').onclick = ()=>{ if(mode==='barcode'){mode='ocr'; startCamera();} ocrBurst(5); };
+document.getElementById('barcodeBtn').onclick=()=>{ mode = (mode==='barcode'?'ocr':'barcode'); startCamera(); };
+
+document.getElementById('clearBtn').onclick = ()=>{ if(!confirm('Clear all scans?'))return; items=[]; seen=new Set(); lastEl.textContent=''; tbody.innerHTML=''; tbody.appendChild(emptyRow) };
+document.getElementById('copyBtn').onclick  = async()=>{ const csv=toCSV(items.slice().reverse()); try{await navigator.clipboard.writeText(csv); alert('CSV copied')}catch(e){alert('Copy failed: '+(e?.message||e))} };
+document.getElementById('exportBtn').onclick= ()=>{ const csv=toCSV(items.slice().reverse()); const b=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download='man-pavilion-scans-'+new Date().toISOString().slice(0,19)+'.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u) };
+
+// Manual add
+document.getElementById('addManual').onclick=()=>{ const v=document.getElementById('manualCode').value; addRow(v); document.getElementById('manualCode').value=''; };
+
 </script>
 </body>
 </html>
