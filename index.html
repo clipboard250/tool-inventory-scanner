@@ -1,6 +1,9 @@
-<!doctype html><html lang="en"><head>
-<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Man Pavilion • DPW Tool Scanner</title>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Man Pavilion Tool Scanner (DPW)</title>
 <style>
 :root{--bg:#0b0b0b;--panel:#141414;--accent:#FF4F00;--accent2:#FFD300;--text:#f5f5f5;--muted:#9aa0a6}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,Arial,sans-serif}
@@ -14,11 +17,13 @@ button{padding:10px 14px;border-radius:12px;border:1px solid var(--accent);backg
 button.out{background:transparent;color:var(--text)}
 .small{color:var(--muted);font-size:12px}
 .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
-/* Camera fills box (no skinny vertical feed) */
+/* Camera fills box (no vertical bars) */
 .camwrap{position:relative;width:100%;height:54vh;max-height:440px;border:2px solid var(--accent);border-radius:12px;overflow:hidden;background:#000}
 video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:rotate(0deg)}
-/* Manual entry */
-.manual{display:flex;gap:8px;margin-top:10px}
+/* Manual entry (collapsed by default) */
+details.manual-wrap{margin-top:8px}
+details.manual-wrap[open]{margin-top:4px}
+.manual{display:flex;gap:8px;margin-top:8px}
 .manual input{flex:1;padding:12px 14px;border-radius:12px;border:1px solid #2a2a2a;background:#0e0e0e;color:var(--text);font-size:18px}
 .manual button{white-space:nowrap}
 /* Table */
@@ -26,9 +31,16 @@ table{width:100%;border-collapse:collapse;font-size:14px;margin-top:12px}
 th{text-align:left;padding:8px;background:var(--accent);color:#111}
 td{padding:8px;border-top:1px solid #222}
 input.note{width:100%;background:transparent;color:var(--text);border:1px solid #2a2a2a;border-radius:8px;padding:6px}
-</style></head><body>
-<header><div class="wrap row"><div class="tag"></div><h1>Man Pavilion • DPW Tool Scanner</h1>
-<div style="margin-left:auto" class="small">barcode → spreadsheet</div></div></header>
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap row">
+    <div class="tag"></div>
+    <h1>Man Pavilion Tool Scanner (DPW)</h1>
+    <div style="margin-left:auto" class="small">barcode → spreadsheet</div>
+  </div>
+</header>
 
 <main class="wrap" style="padding-bottom:96px">
   <div class="panel">
@@ -45,11 +57,14 @@ input.note{width:100%;background:transparent;color:var(--text);border:1px solid 
     <div class="small" style="margin-top:6px">Last: <span class="mono" id="last"></span></div>
     <div id="error" class="small" style="margin-top:6px;color:var(--accent2)"></div>
 
-    <!-- Manual entry (for worn labels or no barcode) -->
-    <div class="manual">
-      <input id="manualCode" inputmode="numeric" pattern="[0-9\\-]*" placeholder="Type code (e.g., 554-10098)"/>
-      <button id="addManual">Add</button>
-    </div>
+    <!-- Manual entry (use ONLY if sticker is gone) -->
+    <details class="manual-wrap">
+      <summary class="small" style="cursor:pointer;padding:6px 0">Manual entry (only if sticker is gone)</summary>
+      <div class="manual">
+        <input id="manualCode" inputmode="numeric" pattern="[0-9\-]*" placeholder="Type code (e.g., 554-10098)"/>
+        <button id="addManual">Add</button>
+      </div>
+    </details>
   </div>
 
   <div class="row" style="margin-top:12px">
@@ -60,15 +75,16 @@ input.note{width:100%;background:transparent;color:var(--text);border:1px solid 
   </div>
 
   <div class="panel">
-    <table><thead><tr><th>Time</th><th>Code</th><th>Note</th></tr></thead>
+    <table>
+      <thead><tr><th>Time</th><th>Code</th><th>Note</th></tr></thead>
       <tbody id="tbody"><tr id="emptyRow"><td colspan="3" class="small" style="text-align:center">No scans yet.</td></tr></tbody>
     </table>
   </div>
 </main>
 
-<footer><div class="wrap small">Built for Amanda • Man Pavilion / DPW</div></footer>
+<footer><div class="wrap small">Man Pavilion • subset of DPW</div></footer>
 
-<!-- iOS-friendly UMD build -->
+<!-- ZXing UMD build (best for iOS Safari) -->
 <script src="https://unpkg.com/@zxing/library@0.21.2/umd/index.min.js"></script>
 <script>
 const video=document.getElementById('video'), statusEl=document.getElementById('status'),
@@ -99,10 +115,13 @@ async function start(){
     if(controls){controls.stop();controls=null} if(reader){reader.reset();reader=null}
     stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facing},width:{ideal:1920},height:{ideal:1080}},audio:false});
     video.srcObject=stream; await video.play();
+
+    // Limit formats to improve reliability on your stickers
     const hints=new Map();
     const formats=[ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39];
     hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
     reader=new ZXing.BrowserMultiFormatReader(hints);
+
     controls=await reader.decodeFromVideoElement(video,(res,err)=>{ if(res){ addRow(String(res.getText())) }});
     statusEl.textContent='Scanning…';
   }catch(e){ uiError(e?.message||String(e)); statusEl.textContent='Error' }
@@ -114,10 +133,12 @@ document.getElementById('stopBtn').onclick=stop;
 document.getElementById('flipBtn').onclick=()=>{ facing=(facing==='environment'?'user':'environment'); stop(); start() };
 document.getElementById('clearBtn').onclick=()=>{ if(!confirm('Clear all scans?'))return; items=[]; seen=new Set(); lastEl.textContent=''; tbody.innerHTML=''; tbody.appendChild(emptyRow) };
 document.getElementById('copyBtn').onclick=async()=>{ const csv=toCSV(items.slice().reverse()); try{await navigator.clipboard.writeText(csv); alert('CSV copied')}catch(e){alert('Copy failed: '+(e?.message||e))} };
-document.getElementById('exportBtn').onclick=()=>{ const csv=toCSV(items.slice().reverse()); const b=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download='mp-dpw-scans-'+new Date().toISOString().slice(0,19)+'.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u) };
+document.getElementById('exportBtn').onclick=()=>{ const csv=toCSV(items.slice().reverse()); const b=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download='man-pavilion-scans-'+new Date().toISOString().slice(0,19)+'.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(u) };
 manualBtn.onclick=()=>{ addRow(manualInput.value); manualInput.value=''; manualInput.focus() };
-manualInput.addEventListener('keyup',e=>{ if(e.key==='Enter') manualBtn.click() });
+manualInput?.addEventListener('keyup',e=>{ if(e.key==='Enter') manualBtn.click() });
 
 function toCSV(rows){ const header='Timestamp,Code,Note\n'; const body=rows.map(r=>[r.ts, esc(r.code), esc(r.note)].join(',')).join('\n'); return header+body+'\n' }
 function esc(s){ if(s==null)s=''; s=String(s); return /[\",\\n]/.test(s)? '"'+s.replaceAll('"','""')+'"' : s }
-</script></body></html>
+</script>
+</body>
+</html>
